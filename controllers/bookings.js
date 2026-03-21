@@ -39,7 +39,7 @@ exports.getBooking = async (req, res, next) => {
         // ✅ เปลี่ยนจาก .find() เป็น .findById(req.params.id) เพื่อดึงแค่ตัวเดียว
         const booking = await Booking.findById(req.params.id)
             .populate({ path: 'provider', select: 'name address telephone' })
-            .populate({ path: 'car', select: 'make model year licensePlate dailyRate' });
+            .populate({ path: 'car', select: 'make model year licensePlate dailyRate picture' });
 
         if (!booking) {
             return res.status(404).json({ success: false, message: `No booking with id ${req.params.id}` });
@@ -104,6 +104,20 @@ exports.addBooking = async (req, res, next) => {
             });
         }
 
+        const overlappedBooking = await Booking.findOne({
+            car: req.params.carId,
+            // เงื่อนไขเวลาทับซ้อน: วันรับรถเก่า <= วันคืนรถใหม่ และ วันคืนรถเก่า >= วันรับรถใหม่
+            pickUpDate: { $lte: dDate },
+            dropOffDate: { $gte: pDate }
+        });
+
+        if (overlappedBooking) {
+            return res.status(400).json({ 
+                success: false, 
+                message: 'รถคันนี้ถูกจองไปแล้วในช่วงเวลาที่คุณเลือก โปรดเลือกวันอื่น' 
+            });
+        }
+
         // 4. ถ้าผ่านทุกเงื่อนไข ให้สร้าง Booking
         const booking = await Booking.create(req.body);
         
@@ -130,6 +144,26 @@ exports.updateBooking = async (req, res, next) => {
 
         if (booking.user.toString() !== req.user.id && req.user.role !== 'admin') {
             return res.status(401).json({ success: false, message: "Not authorized" });
+        }
+
+
+        if (req.body.pickUpDate && req.body.dropOffDate) {
+            const pDate = new Date(req.body.pickUpDate);
+            const dDate = new Date(req.body.dropOffDate);
+            
+            const overlappedBooking = await Booking.findOne({
+                _id: { $ne: req.params.id }, // $ne คือ Not Equal: ข้ามการเช็คชนกับ ID ของตัวเอง
+                car: booking.car,
+                pickUpDate: { $lte: dDate },
+                dropOffDate: { $gte: pDate }
+            });
+
+            if (overlappedBooking) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: 'ไม่สามารถเปลี่ยนวันได้: รถคันนี้ถูกจองไปแล้วในช่วงเวลาใหม่ที่คุณเลือก' 
+                });
+            }
         }
 
         booking = await Booking.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
