@@ -13,13 +13,12 @@ exports.getBookings = async (req, res, next) => {
             query = Booking.find();
         }
 
-        // ✨ แก้ไขจุดนี้: สั่ง Populate แบบซ้อนชั้น (Nested)
         query = query.populate({
             path: 'car',
-            select: 'make model year licensePlate dailyRate picture provider', // ดึงฟิลด์ provider ใน car มาด้วย
+            select: 'make model year licensePlate dailyRate picture provider',
             populate: {
                 path: 'provider',
-                select: 'name address telephone' // ดึงข้อมูลจาก Collection Providers มาโชว์
+                select: 'name address telephone'
             }
         });
 
@@ -33,10 +32,8 @@ exports.getBookings = async (req, res, next) => {
 
 // @desc    Get single booking by ID
 // @route   GET /api/v1/bookings/:id
-// ✅ แก้ชื่อจาก getBookings เป็น getBooking (ตามที่ Route เรียกใช้)
 exports.getBooking = async (req, res, next) => {
     try {
-        // ✅ เปลี่ยนจาก .find() เป็น .findById(req.params.id) เพื่อดึงแค่ตัวเดียว
         const booking = await Booking.findById(req.params.id)
             .populate({ path: 'provider', select: 'name address telephone' })
             .populate({ path: 'car', select: 'make model year licensePlate dailyRate picture' });
@@ -57,81 +54,53 @@ exports.getBooking = async (req, res, next) => {
 };
 
 // @desc    Add booking
-// @route   POST /api/v1/providers/:providerId/bookings
+// @route   POST /api/v1/cars/:carId/bookings
 exports.addBooking = async (req, res, next) => {
     try {
         req.body.car = req.params.carId;
         req.body.user = req.user.id;
 
-        // 1. ตรวจสอบว่ามีรถคันนี้จริงไหม
         const car = await Car.findById(req.params.carId);
         if (!car) {
-            return res.status(404).json({ 
-                success: false, 
-                message: `No car with the id of ${req.params.carId}` 
-            });
+            return res.status(404).json({ success: false, message: `No car with the id of ${req.params.carId}` });
         }
 
-        // 2. [เงื่อนไขเพิ่ม] ห้ามจองเกิน 3 คัน (ยกเว้น Admin)
         const existedBookings = await Booking.find({ user: req.user.id });
         if (existedBookings.length >= 3 && req.user.role !== 'admin') {
-            return res.status(400).json({ 
-                success: false, 
-                message: `The user with ID ${req.user.id} has already made 3 bookings` 
-            });
+            return res.status(400).json({ success: false, message: `The user with ID ${req.user.id} has already made 3 bookings` });
         }
 
-        // 3. [เงื่อนไขเพิ่ม] ดึงวันที่จาก body มาเช็ค
         const { pickUpDate, dropOffDate } = req.body;
         const pDate = new Date(pickUpDate);
         const dDate = new Date(dropOffDate);
         const today = new Date();
-        today.setHours(0, 0, 0, 0); // ตั้งเวลาเป็น 00:00 ของวันนี้
+        today.setHours(0, 0, 0, 0);
 
-        // เช็ค: ห้ามจองย้อนหลัง
         if (pDate < today) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Pick-up date cannot be in the past' 
-            });
+            return res.status(400).json({ success: false, message: 'Pick-up date cannot be in the past' });
         }
 
-        // เช็ค: วันคืนรถต้องหลังวันรับรถ
         if (dDate <= pDate) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'Drop-off date must be after pick-up date' 
-            });
+            return res.status(400).json({ success: false, message: 'Drop-off date must be after pick-up date' });
         }
 
         const overlappedBooking = await Booking.findOne({
             car: req.params.carId,
-            // เงื่อนไขเวลาทับซ้อน: วันรับรถเก่า <= วันคืนรถใหม่ และ วันคืนรถเก่า >= วันรับรถใหม่
             pickUpDate: { $lte: dDate },
             dropOffDate: { $gte: pDate }
         });
 
         if (overlappedBooking) {
-            return res.status(400).json({ 
-                success: false, 
-                message: 'รถคันนี้ถูกจองไปแล้วในช่วงเวลาที่คุณเลือก โปรดเลือกวันอื่น' 
-            });
+            return res.status(400).json({ success: false, message: 'รถคันนี้ถูกจองไปแล้วในช่วงเวลาที่คุณเลือก โปรดเลือกวันอื่น' });
         }
 
-        // 4. ถ้าผ่านทุกเงื่อนไข ให้สร้าง Booking
         const booking = await Booking.create(req.body);
         
-        res.status(201).json({ 
-            success: true, 
-            data: booking 
-        });
+        res.status(201).json({ success: true, data: booking });
 
     } catch (err) {
         console.error(err);
-        res.status(400).json({ 
-            success: false, 
-            message: err.message || 'Cannot create Booking' 
-        });
+        res.status(400).json({ success: false, message: err.message || 'Cannot create Booking' });
     }
 };
 
@@ -142,17 +111,18 @@ exports.updateBooking = async (req, res, next) => {
         let booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ success: false, message: "No booking found" });
 
+        // ตรวจสอบสิทธิ์ (Admin หรือเจ้าของถึงจะแก้ได้)
         if (booking.user.toString() !== req.user.id && req.user.role !== 'admin') {
-            return res.status(401).json({ success: false, message: "Not authorized" });
+            return res.status(401).json({ success: false, message: "Not authorized to update this booking" });
         }
 
-
-        if (req.body.pickUpDate && req.body.dropOffDate) {
-            const pDate = new Date(req.body.pickUpDate);
-            const dDate = new Date(req.body.dropOffDate);
+        // เช็ค Overlap โดยดึงวันที่เดิมมาใช้ในกรณีที่ส่งมาแก้แค่วันเดียว
+        if (req.body.pickUpDate || req.body.dropOffDate) {
+            const pDate = new Date(req.body.pickUpDate || booking.pickUpDate);
+            const dDate = new Date(req.body.dropOffDate || booking.dropOffDate);
             
             const overlappedBooking = await Booking.findOne({
-                _id: { $ne: req.params.id }, // $ne คือ Not Equal: ข้ามการเช็คชนกับ ID ของตัวเอง
+                _id: { $ne: req.params.id }, 
                 car: booking.car,
                 pickUpDate: { $lte: dDate },
                 dropOffDate: { $gte: pDate }
@@ -180,8 +150,9 @@ exports.deleteBooking = async (req, res, next) => {
         const booking = await Booking.findById(req.params.id);
         if (!booking) return res.status(404).json({ success: false, message: "No booking found" });
 
+        // ตรวจสอบสิทธิ์ (Admin หรือเจ้าของถึงจะลบได้)
         if (booking.user.toString() !== req.user.id && req.user.role !== 'admin') {
-            return res.status(401).json({ success: false, message: "Not authorized" });
+            return res.status(401).json({ success: false, message: "Not authorized to delete this booking" });
         }
 
         await booking.deleteOne();
