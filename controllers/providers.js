@@ -30,8 +30,9 @@ exports.createProvider = async (req, res, next) => {
 // @route   PUT /api/v1/providers/:id
 exports.updateProvider = async (req, res, next) => {
     try {
+        // 💡 แก้ไขตรงนี้: เปลี่ยนจาก new: true เป็น returnDocument: 'after'
         const provider = await Provider.findByIdAndUpdate(req.params.id, req.body, {
-            new: true,
+            returnDocument: 'after',
             runValidators: true
         });
 

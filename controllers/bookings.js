@@ -136,7 +136,8 @@ exports.updateBooking = async (req, res, next) => {
             }
         }
 
-        booking = await Booking.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+        // 💡 แก้ไขตรงนี้: เปลี่ยนจาก new: true เป็น returnDocument: 'after'
+        booking = await Booking.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
         res.status(200).json({ success: true, data: booking });
     } catch (err) {
         res.status(500).json({ success: false, message: 'Cannot update Booking' });
